@@ -411,7 +411,7 @@ class GenerationMixin:
             encoder_kwargs = {
                 argument: value
                 for argument, value in model_kwargs.items()
-                if not (argument.startswith("decoder_") or argument.startswith("cross_attn"))
+                if not (argument.startswith("decoder_") or argument.startswith("cross_attn") or argument == 'section_wiki_encoding' or argument == 'game_wiki_encoding')
             }
             model_kwargs["encoder_outputs"]: ModelOutput = encoder(input_ids, return_dict=True, **encoder_kwargs)
         return model_kwargs

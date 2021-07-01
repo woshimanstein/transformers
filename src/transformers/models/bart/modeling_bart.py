@@ -20,6 +20,7 @@ import warnings
 from typing import Optional, Tuple
 
 import torch
+from torch._C import Value
 import torch.nn.functional as F
 import torch.utils.checkpoint
 from torch import nn
@@ -42,7 +43,7 @@ from ...modeling_outputs import (
     Seq2SeqQuestionAnsweringModelOutput,
     Seq2SeqSequenceClassifierOutput,
 )
-from ...modeling_utils import PreTrainedModel
+from ...modeling_utils import PreTrainedModel, PretrainedConfig
 from ...utils import logging
 from .configuration_bart import BartConfig
 
@@ -659,7 +660,7 @@ class BartEncoder(BartPretrainedModel):
         embed_tokens (torch.nn.Embedding): output embedding
     """
 
-    def __init__(self, config: BartConfig, embed_tokens: Optional[nn.Embedding] = None):
+    def __init__(self, config: BartConfig, embed_tokens: Optional[nn.Embedding] = None, num_segments: Optional[int] = 0):
         super().__init__(config)
 
         self.dropout = config.dropout
@@ -679,6 +680,7 @@ class BartEncoder(BartPretrainedModel):
             config.max_position_embeddings,
             embed_dim,
         )
+        self.embed_segments = nn.Embedding(num_segments, embed_dim)
         self.layers = nn.ModuleList([BartEncoderLayer(config) for _ in range(config.encoder_layers)])
         self.layernorm_embedding = nn.LayerNorm(embed_dim)
 
@@ -693,6 +695,10 @@ class BartEncoder(BartPretrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        question_length=None,
+        background_length=None,
+        prev_question_length=None,
+        prev_response_length=None
     ):
         r"""
         Args:
@@ -730,6 +736,8 @@ class BartEncoder(BartPretrainedModel):
                 for more detail.
             return_dict (:obj:`bool`, `optional`):
                 Whether or not to return a :class:`~transformers.file_utils.ModelOutput` instead of a plain tuple.
+
+            question_length, background_length, prev_quesiton_length, prev_response_length: [batch, length]
         """
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -750,9 +758,25 @@ class BartEncoder(BartPretrainedModel):
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
+            if torch.count_nonzero(background_length) > 0:
+                input_segment_embeds = self.embed_segments(torch.tensor(0).to(input_ids.device))
+                input_segment_embeds = input_segment_embeds.repeat(input_ids.shape[0], input_ids.shape[1], 1)
+                input_segment_embeds_mask = torch.zeros_like(input_segment_embeds)
+                for batch in range(input_ids.shape[0]):
+                    input_segment_embeds_mask[batch][0: question_length[batch]] = 1
+                input_segment_embeds = input_segment_embeds * input_segment_embeds_mask
+
+                background_segment_embeds = self.embed_segments(torch.tensor(1).to(input_ids.device))
+                background_segment_embeds = background_segment_embeds.repeat(input_ids.shape[0], input_ids.shape[1], 1)
+                background_segment_embeds_mask = torch.zeros_like(background_segment_embeds)
+
+                for batch in range(input_ids.shape[0]):
+                    background_segment_embeds_mask[batch][question_length[batch]: question_length[batch] + background_length[batch]] = 1
+                background_segment_embeds = background_segment_embeds * background_segment_embeds_mask
+                
+                inputs_embeds = inputs_embeds + input_segment_embeds + background_segment_embeds
 
         embed_pos = self.embed_positions(input_shape)
-
         hidden_states = inputs_embeds + embed_pos
         hidden_states = self.layernorm_embedding(hidden_states)
         hidden_states = F.dropout(hidden_states, p=self.dropout, training=self.training)

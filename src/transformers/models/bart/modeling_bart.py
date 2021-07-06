@@ -680,7 +680,7 @@ class BartEncoder(BartPretrainedModel):
             config.max_position_embeddings,
             embed_dim,
         )
-        
+
         if num_segments > 0:
             self.embed_segments = nn.Embedding(num_segments, embed_dim)
 
@@ -759,7 +759,7 @@ class BartEncoder(BartPretrainedModel):
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
-            if torch.count_nonzero(background_length) > 0:
+            if background_length is not None and torch.count_nonzero(background_length) > 0:
                 input_segment_embeds = self.embed_segments(torch.tensor(0).to(input_ids.device))
                 input_segment_embeds = input_segment_embeds.repeat(input_ids.shape[0], input_ids.shape[1], 1)
                 input_segment_embeds_mask = torch.zeros_like(input_segment_embeds)

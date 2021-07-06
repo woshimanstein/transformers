@@ -680,7 +680,10 @@ class BartEncoder(BartPretrainedModel):
             config.max_position_embeddings,
             embed_dim,
         )
-        self.embed_segments = nn.Embedding(num_segments, embed_dim)
+        
+        if num_segments > 0:
+            self.embed_segments = nn.Embedding(num_segments, embed_dim)
+
         self.layers = nn.ModuleList([BartEncoderLayer(config) for _ in range(config.encoder_layers)])
         self.layernorm_embedding = nn.LayerNorm(embed_dim)
 
@@ -697,8 +700,6 @@ class BartEncoder(BartPretrainedModel):
         return_dict=None,
         question_length=None,
         background_length=None,
-        prev_question_length=None,
-        prev_response_length=None
     ):
         r"""
         Args:
